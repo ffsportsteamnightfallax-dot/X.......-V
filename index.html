@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>💋🙈 X....... V.... - HD Media & Community Feed</title>
     
-    <script src=""></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -224,7 +223,7 @@
 
             <div class="relative w-full">
                 <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]"></i>
-                <input type="text" id="searchInput" placeholder="Search posts..." 
+                <input type="text" id="searchInput" placeholder="Search posts by title..." 
                     class="w-full bg-slate-900/90 border border-slate-800 rounded-xl pl-8 pr-3 py-1 text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors">
             </div>
 
@@ -262,8 +261,7 @@
             <script type="text/javascript" src="https://www.highrevenueformat.com/17d800c4879968b69ab3be2ef24a997d/invoke.js"></script>
         </div>
 
-        <div id="feedContainer" class="space-y-6">
-            </div>
+        <div id="feedContainer" class="space-y-6"></div>
 
         <div id="emptyFeedState" class="hidden flex-col items-center justify-center py-20 px-4 text-center glass-panel rounded-2xl border border-dashed border-slate-800">
             <div class="w-14 h-14 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center text-slate-500 mb-3 shadow-inner">
@@ -317,6 +315,18 @@
             </div>
 
             <form id="uploadForm" class="p-4 space-y-4 overflow-y-auto flex-1 bg-slate-900">
+                
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                    <label for="postTitleInput" class="text-[10px] font-bold text-indigo-400 flex items-center gap-1 uppercase tracking-wider">
+                        <i class="fa-solid fa-heading text-indigo-400"></i> Post Title (Optional)
+                    </label>
+                    <div class="relative">
+                        <i class="fa-solid fa-pen absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-[10px]"></i>
+                        <input type="text" id="postTitleInput" placeholder="Enter video/photo title..." 
+                            class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-8 pr-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                    </div>
+                </div>
+
                 <div id="dropzone" class="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-6 text-center cursor-pointer transition-all bg-slate-950/50 relative">
                     <input type="file" id="mediaInput" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" multiple class="hidden">
                     <div id="dropzonePrompt" class="space-y-3 py-2">
@@ -479,228 +489,100 @@
         <span id="toastMessage" class="font-medium">Action successful</span>
     </div>
 
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, updateDoc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+        // Firebase Config
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // Cloudinary Settings
+        const CLOUD_NAME = "kh6rdzth";
+        const UPLOAD_PRESET = "Ku3w9crv";
+
+        // Global functions for upload
+        window.uploadToCloudinary = async function(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('upload_preset', UPLOAD_PRESET);
+            const resourceType = file.type.startsWith('video/') ? 'video' : 'image';
+
+            const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/${resourceType}/upload`, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            return data.secure_url;
+        };
+
+        // Firebase Sync Setup
+        window.savePostToFirebase = async function(postData) {
+            try {
+                await addDoc(collection(db, "posts"), postData);
+            } catch (err) {
+                console.error("Firestore Error:", err);
+            }
+        };
+
+        window.saveChatMessageToFirebase = async function(msgData) {
+            try {
+                await addDoc(collection(db, "chat_messages"), msgData);
+            } catch (err) {
+                console.error("Firestore Chat Error:", err);
+            }
+        };
+
+        window.deletePostFromFirebase = async function(postId) {
+            try {
+                await deleteDoc(doc(db, "posts", postId));
+            } catch (err) {
+                console.error("Firestore Delete Error:", err);
+            }
+        };
+
+        window.updateLikesInFirebase = async function(postId, newLikes, isLiked) {
+            try {
+                const postRef = doc(db, "posts", postId);
+                await updateDoc(postRef, { likes: newLikes, isLiked: isLiked });
+            } catch (err) {
+                console.error("Firestore Update Error:", err);
+            }
+        };
+
+        // Realtime Data Sync
+        const postsQuery = query(collection(db, "posts"), orderBy("timestamp", "desc"));
+        onSnapshot(postsQuery, (snapshot) => {
+            window.firebasePosts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (window.renderFeed) window.renderFeed();
+        });
+
+        const chatQuery = query(collection(db, "chat_messages"), orderBy("timestamp", "asc"));
+        onSnapshot(chatQuery, (snapshot) => {
+            window.firebaseChatMessages = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (window.renderChatMessages) window.renderChatMessages();
+        });
+    </script>
+
     <script>
         const REQUIRED_SECRET_PASS = '@#1200Video';
         const REQUIRED_DELETE_PASS = '@#1200Video79';
 
-        const DB_NAME = 'StreamVaultDB';
-        const DB_VERSION = 5; 
-        const STORE_NAME = 'media_posts';
-        const CHAT_STORE = 'group_chat_messages';
-        
-        let db = null;
-        let memoryPosts = [];
-        let memoryChatMessages = [
-            {
-                id: 'msg_welcome',
-                sender: 'System',
-                text: 'Welcome to 💋🙈 Community Messenger! Start chatting or upload photos/videos.',
-                timestamp: Date.now() - 3600000
-            }
-        ];
-
-        function createDemoCanvasBlob(color1, color2, text) {
-            const canvas = document.createElement('canvas');
-            canvas.width = 800;
-            canvas.height = 450;
-            const ctx = canvas.getContext('2d');
-            const grad = ctx.createLinearGradient(0, 0, 800, 450);
-            grad.addColorStop(0, color1);
-            grad.addColorStop(1, color2);
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, 800, 450);
-            
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 36px Inter, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, 400, 225);
-
-            return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.9));
-        }
-
-        async function initDemoPosts() {
-            if (memoryPosts.length === 0) {
-                const blob1 = await createDemoCanvasBlob('#ec4899', '#8b5cf6', '💋🙈 Welcome to Feed');
-                const blob2 = await createDemoCanvasBlob('#3b82f6', '#10b981', 'HD Photos & Videos Showcase');
-
-                memoryPosts = [
-                    {
-                        id: 'demo_post_1',
-                        title: 'Welcome to 💋🙈 Exclusive HD Media Feed',
-                        channel: 'Kiss & Shy Official',
-                        type: 'image',
-                        fileBlob: blob1,
-                        thumbnailBlob: blob1,
-                        duration: 'PHOTO',
-                        views: '120K views',
-                        likes: 88,
-                        isLiked: true,
-                        currentQuality: '1080p',
-                        timestamp: Date.now() - 600000
-                    },
-                    {
-                        id: 'demo_post_2',
-                        title: 'Share photos, short videos & chat with friends instantly',
-                        channel: 'Community Hub',
-                        type: 'image',
-                        fileBlob: blob2,
-                        thumbnailBlob: blob2,
-                        duration: 'PHOTO',
-                        views: '45K views',
-                        likes: 34,
-                        isLiked: false,
-                        currentQuality: '1080p',
-                        timestamp: Date.now() - 1200000
-                    }
-                ];
-            }
-        }
-
-        function initDB() {
-            return new Promise((resolve) => {
-                try {
-                    if (!window.indexedDB) {
-                        return resolve(null);
-                    }
-                    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-                    request.onupgradeneeded = (e) => {
-                        const database = e.target.result;
-                        if (!database.objectStoreNames.contains(STORE_NAME)) {
-                            const store = database.createObjectStore(STORE_NAME, { keyPath: 'id' });
-                            store.createIndex('timestamp', 'timestamp', { unique: false });
-                        }
-                        if (!database.objectStoreNames.contains(CHAT_STORE)) {
-                            const chatStore = database.createObjectStore(CHAT_STORE, { keyPath: 'id' });
-                            chatStore.createIndex('timestamp', 'timestamp', { unique: false });
-                        }
-                    };
-
-                    request.onsuccess = (e) => {
-                        db = e.target.result;
-                        resolve(db);
-                    };
-
-                    request.onerror = (e) => {
-                        resolve(null);
-                    };
-                } catch (err) {
-                    resolve(null);
-                }
-            });
-        }
-
-        async function savePostToDB(post) {
-            memoryPosts.unshift(post);
-            if (!db) return true;
-            return new Promise((resolve) => {
-                try {
-                    const transaction = db.transaction([STORE_NAME], 'readwrite');
-                    const store = transaction.objectStore(STORE_NAME);
-                    const request = store.put(post);
-                    request.onsuccess = () => resolve(true);
-                    request.onerror = () => resolve(true);
-                } catch (err) {
-                    resolve(true);
-                }
-            });
-        }
-
-        async function deletePostFromDB(postId) {
-            memoryPosts = memoryPosts.filter(p => p.id !== postId);
-            if (!db) return true;
-            return new Promise((resolve) => {
-                try {
-                    const transaction = db.transaction([STORE_NAME], 'readwrite');
-                    const store = transaction.objectStore(STORE_NAME);
-                    const request = store.delete(postId);
-                    request.onsuccess = () => resolve(true);
-                    request.onerror = () => resolve(true);
-                } catch (err) {
-                    resolve(true);
-                }
-            });
-        }
-
-        async function getAllPostsFromDB() {
-            if (!db) return memoryPosts;
-            try {
-                const posts = await new Promise((resolve) => {
-                    const transaction = db.transaction([STORE_NAME], 'readonly');
-                    const store = transaction.objectStore(STORE_NAME);
-                    const index = store.index('timestamp');
-                    const request = index.openCursor(null, 'prev');
-                    const list = [];
-
-                    request.onsuccess = (e) => {
-                        const cursor = e.target.result;
-                        if (cursor) {
-                            list.push(cursor.value);
-                            cursor.continue();
-                        } else {
-                            resolve(list);
-                        }
-                    };
-                    request.onerror = () => resolve([]);
-                });
-
-                if (posts.length > 0) return posts;
-                return memoryPosts;
-            } catch (err) {
-                return memoryPosts;
-            }
-        }
-
-        async function saveChatMessage(msg) {
-            memoryChatMessages.push(msg);
-            if (!db) return true;
-            return new Promise((resolve) => {
-                try {
-                    const transaction = db.transaction([CHAT_STORE], 'readwrite');
-                    const store = transaction.objectStore(CHAT_STORE);
-                    const request = store.put(msg);
-                    request.onsuccess = () => resolve(true);
-                    request.onerror = () => resolve(true);
-                } catch (err) {
-                    resolve(true);
-                }
-            });
-        }
-
-        async function getAllChatMessages() {
-            if (!db) return memoryChatMessages;
-            try {
-                const list = await new Promise((resolve) => {
-                    const transaction = db.transaction([CHAT_STORE], 'readonly');
-                    const store = transaction.objectStore(CHAT_STORE);
-                    const index = store.index('timestamp');
-                    const request = index.openCursor(null, 'next');
-                    const messages = [];
-
-                    request.onsuccess = (e) => {
-                        const cursor = e.target.result;
-                        if (cursor) {
-                            messages.push(cursor.value);
-                            cursor.continue();
-                        } else {
-                            resolve(messages);
-                        }
-                    };
-                    request.onerror = () => resolve([]);
-                });
-
-                if (list.length > 0) return list;
-                return memoryChatMessages;
-            } catch (err) {
-                return memoryChatMessages;
-            }
-        }
+        window.firebasePosts = [];
+        window.firebaseChatMessages = [];
 
         let currentFilter = 'all';
         let searchQuery = '';
         let selectedFiles = []; 
-        let activeObjectURLs = [];
         let selectedChatFile = null;
         let selectedPostForDownload = null;
         let selectedPostForDelete = null;
@@ -718,6 +600,7 @@
         const clearAllMediaBtn = document.getElementById('clearAllMediaBtn');
         const uploadForm = document.getElementById('uploadForm');
         const secretPasswordInput = document.getElementById('secretPasswordInput');
+        const postTitleInput = document.getElementById('postTitleInput');
         
         const deleteModal = document.getElementById('deleteModal');
         const closeDeleteModalBtn = document.getElementById('closeDeleteModalBtn');
@@ -782,28 +665,21 @@
             }
 
             if (selectedPostForDelete) {
-                await deletePostFromDB(selectedPostForDelete);
+                await window.deletePostFromFirebase(selectedPostForDelete);
                 showToast('Post deleted successfully!');
                 hideDeleteModal();
-                await renderFeed();
             }
         });
 
         closeDownloadModalBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
             downloadModal.classList.add('hidden');
-        }, true);
+        });
 
         downloadModal.addEventListener('click', (e) => {
             if (e.target === downloadModal) {
-                e.preventDefault();
-                e.stopPropagation();
-                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
                 downloadModal.classList.add('hidden');
             }
-        }, true);
+        });
 
         downloadHdBtn.addEventListener('click', () => {
             if (selectedPostForDownload) executeDownload(selectedPostForDownload, '1080p_HD');
@@ -816,28 +692,15 @@
         });
 
         function executeDownload(post, qualityTag) {
-            if (!post || !post.fileBlob) return;
-
-            const mediaUrl = URL.createObjectURL(post.fileBlob);
+            if (!post || !post.mediaUrl) return;
             const a = document.createElement('a');
             a.style.display = 'none';
-            a.href = mediaUrl;
-
-            let ext = post.type === 'image' 
-                ? (post.fileBlob.type ? post.fileBlob.type.split('/')[1] : 'jpg') 
-                : (post.fileBlob.type ? post.fileBlob.type.split('/')[1] : 'mp4');
-
-            const safeTitle = (post.title || 'media_file').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            a.download = `${safeTitle}_${qualityTag}.${ext}`;
-
+            a.href = post.mediaUrl;
+            a.target = '_blank';
+            a.download = `media_${qualityTag}`;
             document.body.appendChild(a);
             a.click();
-
-            setTimeout(() => {
-                document.body.removeChild(a);
-                URL.revokeObjectURL(mediaUrl);
-            }, 1000);
-
+            document.body.removeChild(a);
             showToast(`Download started! File will save to your device.`);
         }
 
@@ -853,22 +716,11 @@
         const removeChatPhotoBtn = document.getElementById('removeChatPhotoBtn');
 
         openUploadModalBtn.addEventListener('click', () => uploadModal.classList.remove('hidden'));
-        
-        closeUploadModalBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-            resetAndCloseModal();
-        }, true);
+        closeUploadModalBtn.addEventListener('click', () => resetAndCloseModal());
 
         uploadModal.addEventListener('click', (e) => {
-            if (e.target === uploadModal) {
-                e.preventDefault();
-                e.stopPropagation();
-                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-                resetAndCloseModal();
-            }
-        }, true);
+            if (e.target === uploadModal) resetAndCloseModal();
+        });
 
         function resetAndCloseModal() {
             uploadModal.classList.add('hidden');
@@ -882,23 +734,17 @@
             scrollChatToBottom();
         });
 
-        closeChatModalBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+        closeChatModalBtn.addEventListener('click', () => {
             chatModal.classList.add('hidden');
             resetChatInput();
-        }, true);
+        });
 
         chatModal.addEventListener('click', (e) => {
             if (e.target === chatModal) {
-                e.preventDefault();
-                e.stopPropagation();
-                if (e.stopImmediatePropagation) e.stopImmediatePropagation();
                 chatModal.classList.add('hidden');
                 resetChatInput();
             }
-        }, true);
+        });
 
         chatPhotoInput.addEventListener('change', (e) => {
             if (e.target.files && e.target.files[0]) {
@@ -946,21 +792,25 @@
                 const text = chatInput.value.trim();
                 if (!text && !selectedChatFile) return;
 
-                const isVideo = selectedChatFile ? selectedChatFile.type.startsWith('video/') : false;
+                let mediaUrl = null;
+                let isVideo = false;
+
+                if (selectedChatFile) {
+                    showToast('Uploading chat media...');
+                    mediaUrl = await window.uploadToCloudinary(selectedChatFile);
+                    isVideo = selectedChatFile.type.startsWith('video/');
+                }
 
                 const newMsg = {
-                    id: 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
                     sender: 'User',
                     text: text,
-                    mediaBlob: selectedChatFile || null,
+                    mediaUrl: mediaUrl,
                     mediaType: isVideo ? 'video' : 'image',
                     timestamp: Date.now()
                 };
 
-                await saveChatMessage(newMsg);
+                await window.saveChatMessageToFirebase(newMsg);
                 resetChatInput();
-                await renderChatMessages();
-                scrollChatToBottom();
             } catch (err) {
                 console.error("Chat error:", err);
             }
@@ -970,8 +820,8 @@
             chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
         }
 
-        async function renderChatMessages() {
-            const messages = await getAllChatMessages();
+        window.renderChatMessages = async function() {
+            const messages = window.firebaseChatMessages || [];
 
             if (messages.length === 0) {
                 chatMessagesContainer.innerHTML = `
@@ -986,9 +836,6 @@
 
             chatMessagesContainer.innerHTML = messages.map(msg => {
                 const formattedText = parseLinksAndText(msg.text);
-                const mediaUrl = msg.mediaBlob ? URL.createObjectURL(msg.mediaBlob) : null;
-                if (mediaUrl) activeObjectURLs.push(mediaUrl);
-
                 const isVideo = msg.mediaType === 'video';
                 const timeStr = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -999,13 +846,13 @@
                         </div>
                         <div class="max-w-[82%] bg-slate-800 border border-slate-700 rounded-2xl rounded-tl-sm p-2 shadow-sm">
                             ${msg.text ? `<p class="text-[11px] text-slate-200 leading-relaxed chat-text">${formattedText}</p>` : ''}
-                            ${mediaUrl ? (
+                            ${msg.mediaUrl ? (
                                 isVideo ? `
                                     <div class="mt-1.5 rounded-lg overflow-hidden border border-slate-700 bg-black">
-                                        <video src="${mediaUrl}" controls class="max-h-48 w-full object-contain"></video>
+                                        <video src="${msg.mediaUrl}" controls class="max-h-48 w-full object-contain"></video>
                                     </div>
                                 ` : `
-                                    <img src="${mediaUrl}" class="mt-1.5 rounded-lg border border-slate-700 max-h-40 object-cover w-full" alt="Shared media">
+                                    <img src="${msg.mediaUrl}" class="mt-1.5 rounded-lg border border-slate-700 max-h-40 object-cover w-full" alt="Shared media">
                                 `
                             ) : ''}
                             <span class="text-[8px] text-slate-400 mt-1 block text-right">${timeStr}</span>
@@ -1013,7 +860,8 @@
                     </div>
                 `;
             }).join('');
-        }
+            scrollChatToBottom();
+        };
 
         function parseLinksAndText(str) {
             if (!str) return '';
@@ -1193,6 +1041,7 @@
             selectedFiles = [];
             capturedVideoThumbnailBlob = null;
             mediaInput.value = '';
+            if(postTitleInput) postTitleInput.value = '';
             galleryPreviewGrid.innerHTML = '';
             previewContainer.classList.add('hidden');
             dropzonePrompt.classList.remove('hidden');
@@ -1216,48 +1065,66 @@
             }
 
             const submitBtn = document.getElementById('submitPostBtn');
+            const submitBtnText = document.getElementById('submitBtnText');
             submitBtn.disabled = true;
             submitBtn.classList.add('opacity-75');
+            submitBtnText.textContent = "Uploading to Cloudinary...";
 
-            let uploadedCount = 0;
+            const userTitle = postTitleInput.value.trim();
 
-            for (let i = 0; i < selectedFiles.length; i++) {
-                const file = selectedFiles[i];
-                const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
+            try {
+                for (let i = 0; i < selectedFiles.length; i++) {
+                    const file = selectedFiles[i];
+                    const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
 
-                let durationStr = '0:00';
-                if (mediaType === 'video') {
-                    durationStr = await getVideoDuration(file);
+                    let durationStr = '0:00';
+                    if (mediaType === 'video') {
+                        durationStr = await getVideoDuration(file);
+                    }
+
+                    // Upload to Cloudinary
+                    const mediaUrl = await window.uploadToCloudinary(file);
+                    let posterUrl = mediaUrl;
+
+                    if (mediaType === 'video' && capturedVideoThumbnailBlob) {
+                        posterUrl = await window.uploadToCloudinary(capturedVideoThumbnailBlob);
+                    }
+
+                    // Use user custom title or generate default title
+                    let finalTitle = userTitle;
+                    if (!finalTitle) {
+                        finalTitle = `${mediaType === 'video' ? 'Video' : 'Photo'} Upload ${Math.floor(Math.random() * 900) + 100}`;
+                    } else if (selectedFiles.length > 1) {
+                        finalTitle = `${userTitle} (${i + 1})`;
+                    }
+                    
+                    const newPost = {
+                        title: finalTitle,
+                        channel: 'Local Creator',
+                        type: mediaType,
+                        mediaUrl: mediaUrl,
+                        posterUrl: posterUrl,
+                        duration: durationStr,
+                        views: Math.floor(Math.random() * 90) + 10 + 'K views',
+                        likes: Math.floor(Math.random() * 50) + 5,
+                        isLiked: false,
+                        currentQuality: '1080p',
+                        timestamp: Date.now() - (i * 1000)
+                    };
+
+                    await window.savePostToFirebase(newPost);
                 }
 
-                let finalThumbnail = mediaType === 'video' ? capturedVideoThumbnailBlob : file;
-                const generatedTitle = `Media Upload ${Math.floor(Math.random() * 900) + 100}`;
-                
-                const newPost = {
-                    id: 'post_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7),
-                    title: generatedTitle,
-                    channel: 'Local Creator',
-                    type: mediaType,
-                    fileBlob: file,
-                    thumbnailBlob: finalThumbnail || file,
-                    duration: durationStr,
-                    views: Math.floor(Math.random() * 90) + 10 + 'K views',
-                    likes: Math.floor(Math.random() * 50) + 5,
-                    isLiked: false,
-                    currentQuality: '1080p',
-                    timestamp: Date.now() - (i * 1000)
-                };
-
-                await savePostToDB(newPost);
-                uploadedCount++;
+                showToast(`Post published successfully!`);
+                resetAndCloseModal();
+            } catch(err) {
+                console.error("Upload error:", err);
+                showToast('Failed to upload file.', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-75');
+                submitBtnText.textContent = "Publish Post";
             }
-
-            submitBtn.disabled = false;
-            submitBtn.classList.remove('opacity-75');
-
-            showToast(`${uploadedCount} ${uploadedCount === 1 ? 'post' : 'posts'} published successfully!`);
-            resetAndCloseModal();
-            await renderFeed();
         });
 
         function getVideoDuration(file) {
@@ -1275,15 +1142,12 @@
             });
         }
 
-        async function renderFeed() {
-            activeObjectURLs.forEach(url => URL.revokeObjectURL(url));
-            activeObjectURLs = [];
-
-            let posts = await getAllPostsFromDB();
+        window.renderFeed = async function() {
+            let posts = window.firebasePosts || [];
 
             if (searchQuery) {
                 const q = searchQuery.toLowerCase();
-                posts = posts.filter(p => p.title.toLowerCase().includes(q) || p.channel.toLowerCase().includes(q));
+                posts = posts.filter(p => (p.title && p.title.toLowerCase().includes(q)) || (p.channel && p.channel.toLowerCase().includes(q)));
             }
 
             if (currentFilter !== 'all') {
@@ -1303,21 +1167,17 @@
             emptyFeedState.classList.remove('flex');
 
             let htmlContent = '';
-            posts.forEach((post, index) => {
+            posts.forEach((post) => {
                 htmlContent += createPostHTML(post);
             });
 
             feedContainer.innerHTML = htmlContent;
             attachPostEvents(posts);
-        }
+        };
 
         function createPostHTML(post) {
-            const mediaObjectURL = post.fileBlob ? URL.createObjectURL(post.fileBlob) : '';
-            if (mediaObjectURL) activeObjectURLs.push(mediaObjectURL);
-
-            const posterURL = post.thumbnailBlob ? URL.createObjectURL(post.thumbnailBlob) : mediaObjectURL;
-            if (posterURL && posterURL !== mediaObjectURL) activeObjectURLs.push(posterURL);
-
+            const mediaObjectURL = post.mediaUrl || '';
+            const posterURL = post.posterUrl || mediaObjectURL;
             const timeAgo = formatTimeAgo(post.timestamp);
 
             const adIframeContent1 = `
@@ -1426,7 +1286,7 @@
                             💋
                         </div>
                         <div class="flex-1 min-w-0">
-                            <h3 class="font-bold text-slate-100 text-[11px] sm:text-xs truncate leading-tight tracking-tight">${post.title}</h3>
+                            <h3 class="font-bold text-slate-100 text-[11px] sm:text-xs truncate leading-tight tracking-tight">${escapeHTML(post.title)}</h3>
                             <p class="text-[9px] text-slate-400 mt-0.5 flex items-center gap-1">
                                 <span>${escapeHTML(post.channel)}</span> • <span>${post.views || '79K views'}</span> • <span>${timeAgo}</span>
                             </p>
@@ -1572,7 +1432,13 @@
                 }
 
                 const likeBtn = card.querySelector('.like-btn');
-                if (likeBtn) likeBtn.addEventListener('click', () => toggleLike(postId));
+                if (likeBtn && post) {
+                    likeBtn.addEventListener('click', () => {
+                        const newIsLiked = !post.isLiked;
+                        const newLikes = post.likes + (newIsLiked ? 1 : -1);
+                        window.updateLikesInFirebase(postId, newLikes, newIsLiked);
+                    });
+                }
 
                 const kissBtn = card.querySelector('.kiss-react-btn');
                 if (kissBtn) kissBtn.addEventListener('click', () => showToast('💋 Kiss reaction sent!'));
@@ -1598,32 +1464,6 @@
         function openDownloadOptions(post) {
             selectedPostForDownload = post;
             downloadModal.classList.remove('hidden');
-        }
-
-        async function toggleLike(postId) {
-            let foundInMem = memoryPosts.find(p => p.id === postId);
-            if (foundInMem) {
-                foundInMem.isLiked = !foundInMem.isLiked;
-                foundInMem.likes += foundInMem.isLiked ? 1 : -1;
-            }
-
-            if (db) {
-                try {
-                    const transaction = db.transaction([STORE_NAME], 'readwrite');
-                    const store = transaction.objectStore(STORE_NAME);
-                    const request = store.get(postId);
-
-                    request.onsuccess = async () => {
-                        const post = request.result;
-                        if (post) {
-                            post.isLiked = !post.isLiked;
-                            post.likes += post.isLiked ? 1 : -1;
-                            await savePostToDB(post);
-                        }
-                    };
-                } catch(e) {}
-            }
-            await renderFeed();
         }
 
         document.querySelectorAll('.filter-tab').forEach(btn => {
@@ -1662,6 +1502,7 @@
         }
 
         function formatTimeAgo(timestamp) {
+            if (!timestamp) return 'Just now';
             const seconds = Math.floor((Date.now() - timestamp) / 1000);
             if (seconds < 60) return 'Just now';
             const minutes = Math.floor(seconds / 60);
@@ -1678,18 +1519,6 @@
                 tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
             );
         }
-
-        window.onload = async function() {
-            try {
-                await initDB();
-                await initDemoPosts();
-                await renderFeed();
-            } catch (err) {
-                console.error("Initialization error:", err);
-                await initDemoPosts();
-                await renderFeed();
-            }
-        };
     </script>
 </body>
-    </html>
+</html>
